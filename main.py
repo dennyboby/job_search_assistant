@@ -1,6 +1,9 @@
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from linkedin_api import Linkedin
-import yaml
+import PyPDF2, pdfplumber
 import argparse
+import yaml
 import time
 
 class JobDetail():
@@ -10,6 +13,7 @@ class JobDetail():
         self.job_description = job_description
         self.job_link = job_link
         self.company_name = company_name
+        self.match_percentage = 0
 
     def __eq__(self, other):
         return (isinstance(other, self.__class__) and
@@ -20,7 +24,8 @@ class JobDetail():
         return hash(self.job_title + self.company_name)
     
     def __str__(self):
-        return "Job title:= %s, Company name:- %s, Job ID:= %s" % (self.job_title, self.company_name, self.job_id)
+        return "Job title:= %s, Company name:- %s, Job ID:= %s, Match Percentage:= %d" % (self.job_title, self.company_name,\
+                                                                                           self.job_id, int(self.match_percentage))
 
 class JobSearchAssistant:
     def __init__(self, dict_args):
@@ -28,28 +33,67 @@ class JobSearchAssistant:
         self.dict_args = dict_args
         self.api = Linkedin(dict_args['email_ID'], dict_args['email_pass'])
         self.job_details = []
-        self.include_title_words = dict_args['include_title_words']
-        self.company_blacklist = dict_args['company_blacklist']
+        self.resume_text = self.get_resume_text(dict_args['resume_path'])
         self.urn_id = self.api.get_profile(public_id=dict_args['sent_to_public_ID'])['entityUrn'].split(':')[3]
         self.conversation_urn_id = self.api.get_conversation_details(self.urn_id)['dashEntityUrn'].split(':')[3]
 
-    
+    def description_match_percentage(self, job_description, resume_text):
+        match_set=[job_description, resume_text]
+        cv=CountVectorizer()
+        count_matrix=cv.fit_transform(match_set)
+        match_percentage=cosine_similarity(count_matrix)[0][1]*100
+        match_percentage=round(match_percentage,2)
+        return match_percentage 
+
+    def get_resume_text(self, resume_path):
+        with open(resume_path, 'rb') as cv_file:
+            reader = PyPDF2.PdfReader(cv_file)
+            pages = len(reader.pages)
+
+            script = []
+            with pdfplumber.open(cv_file) as pdf:
+                for i in range(pages):
+                    page = pdf.pages[i]
+                    text = page.extract_text()
+                    script.append(text)
+            script = ''.join(script)
+            cv_clear = script.replace("\n", "")
+        # print(cv_clear)
+        return cv_clear
+
+    def filter_details(self, jobs, exclude_description_words):
+        filtered_jobs = []
+        for job in jobs:
+            if not any(map(lambda w: w.lower() in job.job_description.lower(), exclude_description_words)):
+                filtered_jobs.append(job)
+        return filtered_jobs
+
     def get_jobs(self):
         # Search for jobs
         jobs = self.api.search_jobs(keywords=self.dict_args['keywords'], experience=self.dict_args['experience'], 
                        job_type= self.dict_args['job_type'], 
                        location_name=self.dict_args['location_name'], remote=self.dict_args['remote'], 
-                       listed_at=self.dict_args['listed_at'])
-        
+                       listed_at=self.dict_args['listed_at'] * 60 * 60)
+        print('Total jobs found initial: ', len(jobs))
         # Filter jobs by title
         jobs_filtered = self.filter_job_title(jobs, self.dict_args['include_title_words'], self.dict_args['exclude_title_words'])
-
+        print('Total jobs found after title filter: ', len(jobs_filtered))
         # Get job details
         jobs_details = self.get_job_details(jobs_filtered)
-
+        print('Total jobs found after getting job details: ', len(jobs_details))
         # Filter jobs by company
         jobs_details_filtered = self.filter_companies(jobs_details, self.dict_args['company_blacklist'])
-
+        print('Total jobs found after company filter: ', len(jobs_details_filtered))
+        jobs_details_filtered = self.filter_details(jobs_details_filtered, self.dict_args['exclude_description_words'])
+        print('Total jobs found after details filter: ', len(jobs_details_filtered))
+        # Filter jobs by description
+        jobs_filtered = []
+        for job in jobs_details_filtered:
+            job.match_percentage = self.description_match_percentage(job.job_description, self.resume_text)
+            if job.match_percentage >= self.dict_args['job_match_percentage']:
+                jobs_filtered.append(job)
+        jobs_details_filtered = jobs_filtered
+        print('Total jobs found after description filter: ', len(jobs_details_filtered))
         return jobs_details_filtered
         
 
@@ -104,19 +148,28 @@ def load_yaml(yaml_path):
     return dict_args
 
 def main():
-    
+    # Initialize the variables
+    loop_flag = True
     args = parse_args()
     dict_args = load_yaml(args.yaml_path)
     assistant = JobSearchAssistant(dict_args)
 
-    jobs = assistant.get_jobs()
-    print('Total jobs found: ', len(jobs))
+    while loop_flag:
+        jobs = assistant.get_jobs()
+        print('Total jobs found: ', len(jobs))
 
-    assistant.send_message('Total jobs found: ' + str(len(jobs)))
-    for job in jobs:
-        print(job)
-        assistant.send_message(job.job_link)
-    assistant.send_message('Are there any issues with the above listed jobs?')
+        assistant.send_message('Total jobs found: ' + str(len(jobs)))
+        for job in jobs:
+            print(job)
+            assistant.send_message(job.job_link)
+        assistant.send_message('Ok. Second prototype is ready. How are the jobs listed above? Also, could you please share your resume?')
+
+        # Wait for schedule time
+        time.sleep(dict_args['schedule_time'] * 60 * 60)
+
+        if bool(dict_args['schedule_time']) == False:
+            loop_flag = False
+
 
 
 if __name__ == '__main__':
