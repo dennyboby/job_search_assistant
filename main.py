@@ -162,7 +162,6 @@ def main():
         for job in jobs:
             print(job)
             assistant.send_message(job.job_link)
-        assistant.send_message('Ok. Second prototype is ready. How are the jobs listed above? Also, could you please share your resume?')
 
         # Wait for schedule time
         time.sleep(dict_args['schedule_time'] * 60 * 60)
