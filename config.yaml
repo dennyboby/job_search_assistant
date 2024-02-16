@@ -1,5 +1,6 @@
 email_ID: xyz@gmail.com # Email
 email_pass: ABCD # Password
+palm_api_key: '****' # Palm API key
 keywords: 'Test Engineer' # Sting separated by commas
 experience: ['2','3'] # A list of experience levels, one or many of "1", "2", "3", "4", "5" and "6" (internship, entry level, associate, mid-senior level, director and executive, respectively)
 job_type: ['F'] # A list of job types , one or many of "F", "C", "P", "T", "I", "V", "O" (full-time, contract, part-time, temporary, internship, volunteer and "other", respectively)
@@ -7,12 +8,16 @@ job_title: [] # A list of title URN IDs (str)
 location_name: 'United States' # Name of the location to search within. Example: "Kyiv City, Ukraine"
 remote: ['1','3'] # A list to filter for remote jobs, onsite or hybrid. onsite:"1", remote:"2", hybrid:"3"
 listed_at: 24 # maximum number of hours passed since job posting. 24 will filter job postings posted in last 24 hours.
+jobs_limit: 1000 # Maximum number of jobs to search for. Maximum is 1000.
 sent_to_public_ID: 'sam-xyz' # Public ID of the person you want to send message to. https://linkedin-api.readthedocs.io/en/latest/key_concepts.html
-include_title_words: ['Embedded'] # A list of words that must be present in the job title
-exclude_title_words: ['Staff', 'Project', 'Technician'] # A list of words that must not be present in the job title
-exclude_description_words: ['U.S. Citizenship', 'U.S. Citizen', 'Permanent Resident', Green Card Holder, 'US Citizenship'] # A list of words that must not be present in the job description
+include_title_words: ['Test'] # A list of words that must be present in the job title
+exclude_title_words: ['Staff', 'Project', 'Technician', 'Lead'] # A list of words that must not be present in the job title
+exclude_description_words: []
+# exclude_description_words: ['U.S. Citizenship', 'U.S. Citizen', 'Permanent Resident', 'Green Card Holder',
+#                'US Citizenship', 'U.S. security clearance'] # A list of words that must not be present in the job description
 company_blacklist: ['Dice', 'clickjobs.io', 'Actalent', 'carex consulting group',
-                    'global technical talent, an inc. 5000 company'] # A list of company names that must not be present
+                    'global technical talent, an inc. 5000 company', 'Aditi Consulting', 'Jobot',
+                    'iHire', 'Alliance of Professionals & Consultants, Inc. (APC)'] # A list of company names that must not be present
 schedule_time: 0 # Time in hours after which the script will run again. 1 will run the script every hour.
 resume_path: 'resume.pdf' # Path to your resume
 job_match_percentage: 50 # Percentage of job match to resume. 80 will send message to jobs that match 80% or more with your resume.

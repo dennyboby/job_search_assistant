@@ -1,5 +1,6 @@
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import google.generativeai as palm
 from linkedin_api import Linkedin
 import PyPDF2, pdfplumber
 import argparse
@@ -24,6 +25,7 @@ class JobDetail():
         return hash(self.job_title + self.company_name)
     
     def __str__(self):
+        # print(self.job_description)
         return "Job title:= %s, Company name:- %s, Job ID:= %s, Match Percentage:= %d" % (self.job_title, self.company_name,\
                                                                                            self.job_id, int(self.match_percentage))
 
@@ -36,15 +38,32 @@ class JobSearchAssistant:
         self.resume_text = self.get_resume_text(dict_args['resume_path'])
         self.urn_id = self.api.get_profile(public_id=dict_args['sent_to_public_ID'])['entityUrn'].split(':')[3]
         self.conversation_urn_id = self.api.get_conversation_details(self.urn_id)['dashEntityUrn'].split(':')[3]
+        palm.configure(api_key=dict_args['palm_api_key'])
+        models = [m for m in palm.list_models() if 'generateText' in m.supported_generation_methods]
+        self.model = models[0].name
 
+    # def description_match_percentage(self, job_description, resume_text):
+    #     match_set=[job_description, resume_text]
+    #     cv=CountVectorizer()
+    #     count_matrix=cv.fit_transform(match_set)
+    #     match_percentage=cosine_similarity(count_matrix)[0][1]*100
+    #     match_percentage=round(match_percentage,2)
+    #     return match_percentage 
+        
     def description_match_percentage(self, job_description, resume_text):
-        match_set=[job_description, resume_text]
-        cv=CountVectorizer()
-        count_matrix=cv.fit_transform(match_set)
-        match_percentage=cosine_similarity(count_matrix)[0][1]*100
-        match_percentage=round(match_percentage,2)
-        return match_percentage 
-
+        query = "Job Description: " + job_description + " Resume: " + resume_text
+        query = query + 'What is the resume to job description match percentage? Answer in percentage.'
+        completion = palm.generate_text(
+                            model=self.model,
+                            prompt=query,
+                            temperature=0,
+                            # The maximum length of the response
+                            max_output_tokens=800,)
+        print('Match % = ' + completion.result)
+        value = completion.result
+        value = value.replace('%', '')
+        return float(value)
+    
     def get_resume_text(self, resume_path):
         with open(resume_path, 'rb') as cv_file:
             reader = PyPDF2.PdfReader(cv_file)
@@ -57,23 +76,38 @@ class JobSearchAssistant:
                     text = page.extract_text()
                     script.append(text)
             script = ''.join(script)
-            cv_clear = script.replace("\n", "")
+            cv_clear = script.replace("\n", " ")
         # print(cv_clear)
         return cv_clear
 
     def filter_details(self, jobs, exclude_description_words):
         filtered_jobs = []
         for job in jobs:
-            if not any(map(lambda w: w.lower() in job.job_description.lower(), exclude_description_words)):
+            completion = palm.generate_text(
+                            model=self.model,
+                            prompt=job.job_description + ' Does the above job require green card or US citizenship? Answer only True or False.',
+                            temperature=0,
+                            # The maximum length of the response
+                            max_output_tokens=800,)
+            if completion.result == 'False':
                 filtered_jobs.append(job)
+            #     print('Job ID False : ', job.job_id)
+            # else:
+            #     print('Completion result: ', completion.result)
+            #     print('Job ID True : ', job.job_id)
+
         return filtered_jobs
+        # for job in jobs:
+        #     if not any(map(lambda w: w.lower() in job.job_description.lower(), exclude_description_words)):
+        #         filtered_jobs.append(job)
+        # return filtered_jobs
 
     def get_jobs(self):
         # Search for jobs
         jobs = self.api.search_jobs(keywords=self.dict_args['keywords'], experience=self.dict_args['experience'], 
                        job_type= self.dict_args['job_type'], 
                        location_name=self.dict_args['location_name'], remote=self.dict_args['remote'], 
-                       listed_at=self.dict_args['listed_at'] * 60 * 60)
+                       listed_at=self.dict_args['listed_at'] * 60 * 60, limit=self.dict_args['jobs_limit'])
         print('Total jobs found initial: ', len(jobs))
         # Filter jobs by title
         jobs_filtered = self.filter_job_title(jobs, self.dict_args['include_title_words'], self.dict_args['exclude_title_words'])
@@ -93,7 +127,7 @@ class JobSearchAssistant:
             if job.match_percentage >= self.dict_args['job_match_percentage']:
                 jobs_filtered.append(job)
         jobs_details_filtered = jobs_filtered
-        print('Total jobs found after description filter: ', len(jobs_details_filtered))
+        print('Total jobs found after percentage match filter: ', len(jobs_details_filtered))
         return jobs_details_filtered
         
 
@@ -117,6 +151,8 @@ class JobSearchAssistant:
             job_title = job['title']
             job_info = self.api.get_job(job_id)
             job_description = job_info['description']['text']
+            job_description = job_description.replace("\n", " ")
+            # print(job_description)
             job_link = 'https://www.linkedin.com/jobs/view/' + job_id
             company_name = list(job_info['companyDetails'].values())[0]['companyResolutionResult']['name']
             job_details.add(JobDetail(job_id, job_title, job_description, job_link, company_name))
@@ -158,10 +194,10 @@ def main():
         jobs = assistant.get_jobs()
         print('Total jobs found: ', len(jobs))
 
-        assistant.send_message('Total jobs found: ' + str(len(jobs)))
+        # assistant.send_message('Total jobs found: ' + str(len(jobs)))
         for job in jobs:
             print(job)
-            assistant.send_message(job.job_link)
+            # assistant.send_message(job.job_link)
 
         # Wait for schedule time
         time.sleep(dict_args['schedule_time'] * 60 * 60)
